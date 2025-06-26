@@ -38,7 +38,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'travel_planner'
+    'rest_framework.authtoken',
+    'travel_planner',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -125,3 +127,30 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 #Custom user model
 AUTH_USER_MODEL = 'travel_planner.CustomUser'
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Travel Planner API',
+    'DESCRIPTION': 'API for managing travel plans, destinations, activities, and comments.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False, 
+
+    # Add authentication information if you want it to appear in Swagger UI's "Authorize" button
+    'AUTHENTICATION_SCHEMES': [
+        'drf_spectacular.authentication.TokenScheme', # For TokenAuthentication
+    ]
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+    
+    # --- DRF SPECTACULAR SETTING ---
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', 
+    # --- END DRF SPECTACULAR SETTING ---
+}
