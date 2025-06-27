@@ -99,7 +99,7 @@ class Comment(models.Model):
 
     # --- Generic Foreign Key Fields ---
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField() # Stores the primary key of the related object
+    object_id = models.PositiveIntegerField() 
     content_object = GenericForeignKey('content_type', 'object_id')
     # ----------------------------------
 

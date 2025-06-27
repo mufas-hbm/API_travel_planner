@@ -1,22 +1,31 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import Group
+
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from rest_framework.settings import api_settings
-from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
+
+from rest_framework import permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser, IsAuthenticatedOrReadOnly
 from rest_framework.authentication import TokenAuthentication
+from .permissions import IsOwnerOrAdmin, IsOwnerOrAdminOrReadOnly
 
 from .models import CustomUser, Destination, TravelPlan, TravelPlanDestination, Activity, Comment
 from .serializers import (
     CustomUserSerializer, DestinationSerializer, TravelPlanSerializer,
     TravelPlanDestinationSerializer, ActivitySerializer, CommentSerializer
 )
-from .permissions import IsOwnerOrReadOnly, IsAdminOrReadOnly, IsTravelPlanOwnerOrReadOnly, IsOwnerOrAdmin, IsOwnerOrAdminOrReadOnly
+
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import (
+    CustomUserFilter,DestinationFilter, TravelPlanFilter,
+    TravelPlanDestinationFilter, ActivityFilter, CommentFilter
+)
+
 
 # --- Authentication Views ---
 
@@ -98,7 +107,12 @@ class CustomUserListCreateView(generics.ListCreateAPIView):
     """
     queryset = CustomUser.objects.all() # Base queryset for all users
     serializer_class = CustomUserSerializer # Serializer for user data
-    authentication_classes = [TokenAuthentication] # Requires token for listing (admins)
+    authentication_classes = [TokenAuthentication] # Requires token for listing
+
+    # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = CustomUserFilter
+    # --- END FILTER INTEGRATION ---
 
     def get_permissions(self):
         """
@@ -119,9 +133,6 @@ class CustomUserDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
     authentication_classes = [TokenAuthentication]
-    # *** IMPORTANT CHANGE HERE ***
-    # Use the new IsOwnerOrAdmin permission.
-    # We still keep IsAuthenticated as a baseline for all operations on this view.
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin] # Now it's IsAuthenticated AND (IsOwner OR IsAdmin)
 
     def get_object(self):
@@ -162,8 +173,13 @@ class DestinationListCreateView(generics.ListCreateAPIView):
     """
     queryset = Destination.objects.all() # All destinations
     serializer_class = DestinationSerializer # Serializer for destination data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations for consistency
-    permission_classes = [IsAuthenticatedOrReadOnly] # Defined in permissions.py: Read for all, Write for Admins
+    authentication_classes = [TokenAuthentication] 
+    permission_classes = [IsAuthenticatedOrReadOnly] 
+
+    # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DestinationFilter
+    # --- END FILTER INTEGRATION ---
 
     def perform_create(self, serializer):
         """
@@ -203,10 +219,15 @@ class TravelPlanListCreateView(generics.ListCreateAPIView):
     Permissions: `IsAuthenticatedOrReadOnly` allows authenticated users to create/read,
                  unauthenticated users to only read (if plan is public).
     """
-    queryset = TravelPlan.objects.all() # All travel plans (will be filtered by get_queryset)
+    queryset = TravelPlan.objects.all() 
     serializer_class = TravelPlanSerializer # Serializer for travel plan data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    permission_classes = [IsAuthenticatedOrReadOnly] # Authenticated can do anything (within scope), unauth can only read
+    authentication_classes = [TokenAuthentication] 
+    permission_classes = [IsAuthenticatedOrReadOnly] 
+
+    # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = TravelPlanFilter
+    # --- END FILTER INTEGRATION ---
 
     def get_queryset(self):
         """
@@ -214,7 +235,6 @@ class TravelPlanListCreateView(generics.ListCreateAPIView):
         - If authenticated: See their own travel plans AND public plans by others.
         - If unauthenticated: Only see public travel plans.
         """
-        # Start with a base queryset (e.g., all TravelPlans)
         queryset = TravelPlan.objects.all()
 
         # Check if the requesting user is authenticated
@@ -251,10 +271,6 @@ class TravelPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = TravelPlan.objects.all() # All travel plans
     serializer_class = TravelPlanSerializer # Serializer for travel plan data
     authentication_classes = [TokenAuthentication] # Requires token for all operations
-    # Permissions for this view:
-    # - IsOwnerOrReadOnly: The primary permission to ensure only owners can write (update/delete).
-    # - IsAuthenticatedOrReadOnly: Ensures authenticated users can read.
-    # The 'public' aspect for reads by non-owners is handled in get_object.
     permission_classes = [IsOwnerOrAdminOrReadOnly]
 
     def get_object(self):
@@ -284,18 +300,28 @@ class TravelPlanDestinationListCreateView(generics.ListCreateAPIView):
     API View for managing TravelPlanDestination entries.
     Allows:
     - GET (list): Retrieve a list of destination entries. (Only for travel plans owned by the current user)
-    - POST (create): Create a new destination entry. (Only for travel plans owned by the current user)
+    - POST (create): Create a new destination entry. The entry must be associated with
+                    a travel plan owned by the current authenticated user (or an admin user).
 
     Endpoint: GET/POST /api/travelplandestinations/
     Authentication: Token
-    Permissions: `IsTravelPlanOwnerOrReadOnly` ensures only the owner of the *parent TravelPlan*
-                 can create/list these entries.
+    Permissions: `IsOwnerOrAdminOrReadOnly`
+                 - For **list (GET)**: Read access is globally allowed by permission, but the
+                   queryset is explicitly filtered to show only `TravelPlanDestination` entries
+                   related to the requesting user's travel plans.
+                 - For **create (POST)**: Requires authentication. Ownership of the `travel_plan`
+                   is validated within the serializer to ensure the user can only add destinations
+                   to their own plans.
     """
-    queryset = TravelPlanDestination.objects.all() # All TPD entries (will be filtered by get_queryset)
-    serializer_class = TravelPlanDestinationSerializer # Serializer for TPD data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    # Custom permission: only owner of the related TravelPlan can interact
+    queryset = TravelPlanDestination.objects.all() 
+    serializer_class = TravelPlanDestinationSerializer 
+    authentication_classes = [TokenAuthentication]
     permission_classes = [IsOwnerOrAdminOrReadOnly]
+
+    # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = TravelPlanDestinationFilter
+    # --- END FILTER INTEGRATION ---
 
     def get_queryset(self):
         """
@@ -310,8 +336,7 @@ class TravelPlanDestinationListCreateView(generics.ListCreateAPIView):
             return self.queryset.filter(travel_plan__user=self.request.user).order_by('order')
         else:
             # If unauthenticated (AnonymousUser), return an empty queryset,
-            # as TPDs are not public independent of a user's plan.
-            return TravelPlanDestination.objects.none() # <--- THIS IS THE KEY FIX
+            return TravelPlanDestination.objects.none()
 
     def perform_create(self, serializer):
         """
@@ -336,10 +361,9 @@ class TravelPlanDestinationDetailView(generics.RetrieveUpdateDestroyAPIView):
     Permissions: `IsTravelPlanOwnerOrReadOnly` ensures only the owner of the *parent TravelPlan*
                  can interact with this specific entry.
     """
-    queryset = TravelPlanDestination.objects.all() # All TPD entries
-    serializer_class = TravelPlanDestinationSerializer # Serializer for TPD data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    # Custom permission: only owner of the related TravelPlan can interact
+    queryset = TravelPlanDestination.objects.all() 
+    serializer_class = TravelPlanDestinationSerializer 
+    authentication_classes = [TokenAuthentication] 
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
 
     def perform_create(self, serializer):
@@ -355,14 +379,22 @@ class ActivityListCreateView(generics.ListCreateAPIView):
 
     Endpoint: GET/POST /api/activities/
     Authentication: Token
-    Permissions: `IsTravelPlanOwnerOrReadOnly` ensures only the owner of the *parent TravelPlan*
-                 can create/list activities.
+    Permissions: `IsOwnerOrAdminOrReadOnly`
+                 - For **list (GET)**: Read access is global, but the queryset is filtered to
+                   show only activities related to the requesting user's travel plans.
+                 - For **create (POST)**: Requires authentication. Ownership of the `travel_plan`
+                   is validated within the serializer to ensure the user can only add activities
+                   to their own plans.
     """
-    queryset = Activity.objects.all() # All activities (will be filtered by get_queryset)
-    serializer_class = ActivitySerializer # Serializer for activity data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    # Custom permission: only owner of the related TravelPlan can interact
+    queryset = Activity.objects.all() 
+    serializer_class = ActivitySerializer 
+    authentication_classes = [TokenAuthentication] 
     permission_classes = [IsOwnerOrAdminOrReadOnly]
+
+    # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = ActivityFilter
+    # --- END FILTER INTEGRATION ---
 
     def get_queryset(self):
         """
@@ -376,8 +408,6 @@ class ActivityListCreateView(generics.ListCreateAPIView):
             # Filter activities where the associated travel_plan's user is the current requesting user
             return self.queryset.filter(travel_plan__user=self.request.user).order_by('date')
         else:
-            # If unauthenticated (AnonymousUser), return an empty queryset,
-            # as activities are not public independent of a user's plan.
             return Activity.objects.none()
 
     def perform_create(self, serializer):
@@ -386,8 +416,6 @@ class ActivityListCreateView(generics.ListCreateAPIView):
         The `travel_plan` and `destination` fields must be provided as IDs in the request.
         The serializer's custom `create` method handles converting these IDs to objects.
         """
-        # The permission `IsTravelPlanOwnerOrReadOnly` ensures the user has access
-        # to the parent travel plan, so we just save the valid data.
         serializer.save()
 
 class ActivityDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -423,10 +451,15 @@ class CommentListCreateView(generics.ListCreateAPIView):
     Permissions: `IsAuthenticatedOrReadOnly` allows authenticated users to create/read,
                  unauthenticated users to only read.
     """
-    queryset = Comment.objects.all() # All comments
-    serializer_class = CommentSerializer # Serializer for comment data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    permission_classes = [IsAuthenticatedOrReadOnly] # Authenticated can create/read, unauth can only read
+    queryset = Comment.objects.all() 
+    serializer_class = CommentSerializer 
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+     # --- FILTER INTEGRATION ---
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = CommentFilter
+    # --- END FILTER INTEGRATION ---
 
     def perform_create(self, serializer):
         """
@@ -450,8 +483,8 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     Permissions: `IsOwnerOrReadOnly` ensures owners can modify/delete their own comments,
                  and authenticated users can read.
     """
-    queryset = Comment.objects.all() # All comments
-    serializer_class = CommentSerializer # Serializer for comment data
-    authentication_classes = [TokenAuthentication] # Requires token for all operations
-    permission_classes = [IsOwnerOrAdminOrReadOnly] # Defined in permissions.py: Owner can write, authenticated can read
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer 
+    authentication_classes = [TokenAuthentication] 
+    permission_classes = [IsOwnerOrAdminOrReadOnly] 
 

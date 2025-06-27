@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'travel_planner',
     'drf_spectacular',
+    'django_filters',
 ]
 
 MIDDLEWARE = [
@@ -150,7 +151,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     
+    
+    #pagination is the mechanism that breaks down large lists of data (like Destination objects or TravelPlan objects) 
+    #into smaller, manageable chunks or "pages" when an API client requests them.
     # --- DRF SPECTACULAR SETTING ---
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', 
     # --- END DRF SPECTACULAR SETTING ---
+
+    # --- DRF FILTERING SETTING ---
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ]
 }
