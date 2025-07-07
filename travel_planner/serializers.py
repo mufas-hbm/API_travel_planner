@@ -44,7 +44,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
         Custom update method to handle password changes.
         If a new password is provided, set it securely.
         """
-        # If 'password' is present in validated_data, it means the user wants to change it
         if 'password' in validated_data:
             password = validated_data.pop('password')
             instance.set_password(password) # set_password hash the new password
@@ -95,7 +94,6 @@ class TravelPlanSerializer(serializers.ModelSerializer):
     objects in a serializer's output without creating complex nested structures or circular 
     dependencies, especially when you only need a concise representation of the related item.
     '''
-    # It will display the __str__ representation of TravelPlanDestination objects.
     destinations_in_plan = serializers.StringRelatedField(
         source='travelplandestination_set', many=True, read_only=True
     )
@@ -122,13 +120,11 @@ class TravelPlanSerializer(serializers.ModelSerializer):
         return data
 
 
-# --- TravelPlanDestination (Through Model) Serializer - FULL IMPLEMENTATION ---
+# --- TravelPlanDestination ---
 class TravelPlanDestinationSerializer(serializers.ModelSerializer):
     # Field for OUTPUT (nested representation of Destination)
     destination_detail = DestinationSerializer(source='destination', read_only=True)
     
-    # Field for OUTPUT (string representation of TravelPlan to break circular dependency)
-    # This replaces `travel_plan_detail = TravelPlanSerializer(source='travel_plan', read_only=True)`
     travel_plan_display = serializers.StringRelatedField(source='travel_plan', read_only=True)
 
 
@@ -143,18 +139,17 @@ class TravelPlanDestinationSerializer(serializers.ModelSerializer):
     class Meta:
         model = TravelPlanDestination
         fields = [
-            'id', 'order', 'arrival_date', 'departure_date', # Direct fields
-            'destination_detail', 'travel_plan_display', # Output-only nested/string fields
-            'destination_id', 'travel_plan_id' # Input-only ID fields
+            'id', 'order', 'arrival_date', 'departure_date', 
+            'destination_detail', 'travel_plan_display', 
+            'destination_id', 'travel_plan_id' 
         ]
-        # No 'destination' or 'travel_plan' (model's actual FK fields) in Meta.fields
 
     def validate(self, data):
         travel_plan_obj = data.get('travel_plan_id') 
         arrival_date = data.get('arrival_date')
         departure_date = data.get('departure_date')
         
-        errors = {} # Dictionary to collect all validation errors
+        errors = {} 
 
         # Ownership check
         request = self.context.get('request')
@@ -177,19 +172,8 @@ class TravelPlanDestinationSerializer(serializers.ModelSerializer):
             if departure_date > travel_plan_obj.end_date:
                 errors['departure_date'] = errors.get('departure_date', []) + ["Departure date cannot be after the travel plan's end date."]
             
-            # This check is more comprehensive and might capture cases missed by individual checks above
-            # For example, if arrival is within, but departure is way out, or vice versa
-            # The current setup will put specific date errors first.
-            # Let's make this the 'catch-all' cross-field date error if the individual ones don't cover it.
-            # This should be a non-field error if the dates are valid individually but not as a range.
-            # Re-evaluate the logic of the three date range checks to avoid redundancy or ensure correct error type.
             
-            # If individual date errors haven't already caught the range issue,
-            # this general one could be a non_field_error.
-            # Let's simplify the date logic:
             if not (travel_plan_obj.start_date <= arrival_date and departure_date <= travel_plan_obj.end_date):
-                 # If we haven't already added errors to arrival_date or departure_date,
-                 # then this general message is appropriate. Otherwise, the more specific one wins.
                  if 'arrival_date' not in errors and 'departure_date' not in errors:
                     errors['non_field_errors'] = errors.get('non_field_errors', []) + ["Destination dates must be fully within the associated travel plan's dates."]
             
@@ -239,7 +223,6 @@ class ActivitySerializer(serializers.ModelSerializer):
             'destination_detail', 'travel_plan_display', # Output-only nested/string fields
             'destination_id', 'travel_plan_id' # Input-only ID fields
         ]
-        # Do NOT include 'travel_plan' or 'destination' (the model's FK fields) here.
 
 
     def validate_cost(self, value):
@@ -263,7 +246,6 @@ class ActivitySerializer(serializers.ModelSerializer):
                     )
         else:
             # If unauthenticated, they shouldn't even reach here for POST due to permission_classes,
-            # but as a fallback, prevent linking to any plan.
             raise serializers.ValidationError("Authentication is required to create an Activity.")
         
 
@@ -381,6 +363,6 @@ class CommentSerializer(serializers.ModelSerializer):
         validated_data.pop('content_type_id', None)
         validated_data.pop('object_id', None)
         
-        validated_data.pop('user', None) # 'user' is read-only on update, pop it
+        validated_data.pop('user', None) 
 
         return super().update(instance, validated_data)
